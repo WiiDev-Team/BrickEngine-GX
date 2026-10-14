@@ -10,7 +10,7 @@
 #include <string.h>
 #include <strings.h>
 
-#define BASE_DIR    "sd:/apps/wiigame/"
+#define BASE_DIR    "sd:/apps/brickengine-gx/"
 #define LEVEL_DIR   BASE_DIR "levels"
 
 #define MAX_LEVELS  32
