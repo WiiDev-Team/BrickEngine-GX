@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<app version="1">
+	<name>BrickEngine GX</name>
+	<version>v0.0-prealpha r1</version>
+	<release_date>20261014000000</release_date>
+	<coder>WiiDev-Team</coder>
+	<short_description>A mini GX engine for Wii</short_description>
+	<long_description>A mini GX game engine for the Wii.
+
+====CHANGELOG====
+v0.0 r2 (Pre-Alpha)
+- Made assets compile into the application
+v0.0 r1 (Pre-Alpha)
+- Initial Release
+=================
+</long_description>
+</app>
