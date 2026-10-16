@@ -1,4 +1,25 @@
+/*
+ * Simple 3D grid-level engine for the Wii (GRRLIB + PNG textures)
+ *
+ * - Textures are compiled into the program (the PNGs in assets/ become source/assets_data.c, see tools/embed_assets.py)
+ * - Scans sd:/apps/wiigame/levels/ for *.lvl files (written by tools/level_editor.py)
+ * - A level file names the assets it wants:   TEX <id> <name>   e.g.  TEX 0 brick
+ *   "brick", "brick.png" and "textures/brick.png" all select the embedded brick.png; a name that is not
+ *   embedded is looked up on the SD card (sd:/apps/wiigame/<name> or .../textures/<name>.png)
+ * - More than one level -> level select menu at startup
+ * - HOME during the game -> pause menu (launch a different level / return to Wii menu)
+ * - Renders textured columns (walls/blocks of height 1..N) and a tiled floor
+ * - Grid collision, Wiimote (+ Nunchuk) movement
+ *
+ * Game controls (Wiimote held upright):
+ *   D-Pad Up/Down = forward/back, Left/Right = turn, HOME = pause menu
+ *   Nunchuk stick = move + strafe (D-Pad Left/Right still turns), Z = jump
+ *   A Nunchuk is required: without one a "connect a Nunchuk, then press C" screen is shown
+ * Menu controls:
+ *   D-Pad Up/Down = move cursor, A = select, B or HOME = back
+ */
 #include <grrlib.h>
+#include "assets.h"
 #include <fat.h>
 #include <ogc/system.h>
 #include <wiiuse/wpad.h>
@@ -10,7 +31,9 @@
 #include <string.h>
 #include <strings.h>
 
+#ifndef BASE_DIR
 #define BASE_DIR    "sd:/apps/brickengine-gx/"
+#endif
 #define LEVEL_DIR   BASE_DIR "levels"
 
 #define MAX_LEVELS  32
@@ -71,6 +94,55 @@ static void UnloadLevel(void)
     }
 }
 
+/* ------------------------------------------------------------------ */
+/* Assets: textures compiled into the program, selected by name         */
+/* ------------------------------------------------------------------ */
+/* Finds an embedded file by name. Directories and the extension are optional:
+   "brick", "brick.png" and "textures/brick.png" all match the embedded brick.png (case-insensitive). */
+static const EmbeddedAsset *FindAsset(const char *name)
+{
+    const char *slash = strrchr(name, '/');
+    const char *base  = slash ? slash + 1 : name;
+    size_t blen = strlen(base);
+
+    for (int i = 0; i < g_numAssets; i++) {
+        const char *a   = g_assets[i].name;
+        const char *dot = strrchr(a, '.');
+        size_t stem = dot ? (size_t)(dot - a) : strlen(a);
+        if (strcasecmp(a, base) == 0) return &g_assets[i];
+        if (blen == stem && strncasecmp(a, base, stem) == 0) return &g_assets[i];
+    }
+    return NULL;
+}
+
+/* Embedded asset first; otherwise (custom textures that were not compiled in) the SD card */
+static GRRLIB_texImg *LoadTextureAsset(const char *name)
+{
+    const EmbeddedAsset *a = FindAsset(name);
+    if (a) {
+        GRRLIB_texImg *t = GRRLIB_LoadTexture(a->data);
+        if (t) return t;
+        Log("Embedded texture could not be decoded:");
+        Log(a->name);
+    }
+
+    char path[300];
+    snprintf(path, sizeof(path), BASE_DIR "%s", name);
+    GRRLIB_texImg *t = GRRLIB_LoadTextureFromFile(path);
+    if (t) return t;
+
+    if (!strchr(name, '/')) {                       /* bare name: try textures/<name>[.png] on the SD card */
+        snprintf(path, sizeof(path), BASE_DIR "textures/%s", name);
+        t = GRRLIB_LoadTextureFromFile(path);
+        if (t) return t;
+        if (!strchr(name, '.')) {
+            snprintf(path, sizeof(path), BASE_DIR "textures/%s.png", name);
+            t = GRRLIB_LoadTextureFromFile(path);
+        }
+    }
+    return t;
+}
+
 /* Returns 1 = ok, 0 = level file could not be opened, 2 = no texture could be loaded */
 static int LoadLevel(const char *path)
 {
@@ -82,7 +154,7 @@ static int LoadLevel(const char *path)
     lvl.sky = RGBA(100, 150, 255, 255);
     lvl.spawnX = lvl.spawnZ = 1.5f;
 
-    char line[256], file[200], full[300];
+    char line[256], file[200];
     while (fgets(line, sizeof(line), f)) {
         int a, b, c, d;
         float x, y, z;
@@ -100,9 +172,8 @@ static int LoadLevel(const char *path)
             lvl.spawnX = x; lvl.spawnZ = z; lvl.spawnYaw = y;
         } else if (sscanf(line, "TEX %d %199s", &a, file) == 2) {
             if (a >= 0 && a < MAX_TEX) {
-                snprintf(full, sizeof(full), BASE_DIR "%s", file);
-                lvl.tex[a] = GRRLIB_LoadTextureFromFile(full);
-                if (!lvl.tex[a]) Log(full);
+                lvl.tex[a] = LoadTextureAsset(file);
+                if (!lvl.tex[a]) { Log("Texture not found:"); Log(file); }
             }
         } else if (sscanf(line, "CELL %d %d %d %d", &a, &b, &c, &d) == 4) {
             if (a >= 0 && a < lvl.w && b >= 0 && b < lvl.d) {
